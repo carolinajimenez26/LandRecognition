@@ -312,12 +312,63 @@ void getReflectance(TIFF *image, Band &b, string path) {
 /*
  T = K2 / (ln ( (K1 / L_lambda) + 1 ) )
 */
-// int T(Band b, int pixel) {
-//   return b.K2 / (log((b.K1 / radiance(b, pixel)) + 1));
-// }
+int T(Band &b, int pixel) {
+  return b.K2 / (log((b.K1 / radiance(b, pixel)) + 1));
+}
 
-void getTemperature(TIFF *image, Band b, string path) {
+void getTemperature(TIFF *image, Band &b, string path) {
+  uint32 height, width;
+  uint16 SamplesPerPixel, BitsPerSample;
 
+	TIFFGetField(image, TIFFTAG_IMAGEWIDTH, &width);
+	TIFFGetField(image, TIFFTAG_IMAGELENGTH, &height);
+  TIFFGetField(image, TIFFTAG_SAMPLESPERPIXEL, &SamplesPerPixel);
+  TIFFGetField(image, TIFFTAG_BITSPERSAMPLE, &BitsPerSample);
+
+  //------Creates image for radiance information---
+  string fileName = path + "temperature_B" + toString(b.bandNumber + 1);
+  TIFF *tif = TIFFOpen(fileName.c_str(),"w");
+	if (!tif) {
+		fprintf (stderr,"Error opening tiff!\n");
+		exit(0);
+	}
+  b.radiance_fileName = fileName;
+
+  TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
+	TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
+	TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, SamplesPerPixel);
+	TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, BitsPerSample);
+	TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
+	TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+	TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, 1);
+
+  //----------------------------------------------------
+
+  tsize_t linebytes = SamplesPerPixel * width; // length in memory of one row of pixel in the image.
+	unsigned char *buf = NULL; // buffer used to store the row of pixel information for writing to file
+
+  buf = (unsigned char *)_TIFFmalloc(TIFFScanlineSize(tif));
+	if (buf == NULL){
+		cerr << "Could not allocate memory!" << endl;
+		return;
+	}
+
+  // We set the strip size of the file to be size of one row of pixels
+  TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, TIFFDefaultStripSize(tif, width * SamplesPerPixel));
+
+	for (uint32 row = 0; row < height; row++) {
+		int n = TIFFReadScanline(image, buf, row, 0); // gets all the row
+		if (n == -1) {
+			printf("Error");
+			return;
+		}
+		for (int col = 0; col < width; col++) {
+			buf[col] = T(b, buf[col]);
+		}
+    TIFFWriteScanline(tif, buf, row, 0);
+	}
+  (void) TIFFClose(tif);
+	if (buf) _TIFFfree(buf);
 }
 
 int main(int argc, char **argv) {
@@ -329,8 +380,8 @@ int main(int argc, char **argv) {
   string imagesPath(argv[1]);
   string mtl_fileName(argv[2]);
   read(mtl_fileName, v, imagesPath);
-  // cout << "------------" << endl;
-  // for (auto e : v) e.getInfo();
+  cout << "------------" << endl;
+  for (auto e : v) e.getInfo();
 
 	uint32 width, height;
 	int row, col, imagesize;
@@ -345,7 +396,8 @@ int main(int argc, char **argv) {
 	uint16 TileLength; // numero de filas en cada tile
   TIFF *image;
 
-  for (int i = 0; i < 1; i++) { // se calcula lo mismo para todas las bandas
+  for (int i = 0; i < v.size(); i++) { // se calcula lo mismo para todas las bandas
+    dbg(v[i].bandNumber);
     image = TIFFOpen(v[i].fileName.c_str(), "r");
     if(image == NULL){
   		cerr << "Could not open incoming image of band " << v[i].bandNumber << endl;
