@@ -5,6 +5,7 @@
 #include <sstream>
 #include <vector>
 #include <regex>
+#include <tiffio.h>
 #define INF numeric_limits<int>::max()
 #define dbg(x) cout << #x << ": " << x << endl
 double d; // EARTH_SUN_DISTANCE
@@ -13,15 +14,16 @@ double theta_SE; // angle of sun elevation SUN_ELEVATION
 using namespace std;
 
 struct Band {
-  // image m;
   int bandNumber;
   string fileName; // path of the image (FILE_NAME_BAND_N)
-  // unordered_map<int, vector<int>> m;
+  string radiance_fileName, reflectance_fileName;
   double RADIANCE_MULT_BAND, RADIANCE_ADD_BAND, REFLECTANCE_MULT_BAND,
       REFLECTANCE_ADD_BAND, K1, K2;
 
   Band() {
     fileName = "";
+    radiance_fileName = "";
+    reflectance_fileName = "";
     RADIANCE_MULT_BAND = -INF;
     RADIANCE_ADD_BAND = -INF;
     REFLECTANCE_MULT_BAND = -INF;
@@ -68,7 +70,15 @@ double toDouble(string s) {
   return out;
 }
 
-void read(string fileName, vector<Band> &v) { // Read MTL file
+string toString(int n) {
+  stringstream ss;
+  ss << n;
+  string out;
+  ss >> out;
+  return out;
+}
+
+void read(string fileName, vector<Band> &v, string path) { // Read MTL file
   ifstream infile(fileName);
   string line;
   while (getline(infile, line)) {
@@ -83,7 +93,7 @@ void read(string fileName, vector<Band> &v) { // Read MTL file
         while (regex_search (s,m,e)) {
           s = m.suffix().str();
           vector<string> splitted = split(element, '"');
-          v[i].setFileName(splitted[1]);
+          v[i].setFileName(path + splitted[1]);
           v[i].bandNumber = i;
           i++;
         }
@@ -169,16 +179,6 @@ void read(string fileName, vector<Band> &v) { // Read MTL file
   }
 }
 
-/*
-  L_lambda = (Ml)*(Qcal) + Al
-  RADIANCE_MULT_BAND_N -> Ml
-  RADIANCE_ADD_BAND_N -> Al
-  Qcal -> current pixel of the band
-*/
-// int radiance(Band b, int pixel) {
-//   return b.RADIANCE_MULT_BAND * b.m[pixel] + b.RADIANCE_ADD_BAND;
-// }
-
 /* with angular correction
   p_lambda = ((Mp)*(Qcal) + Ap) / sin(theta_SE)
   REFLECTANCE_MULT_BAND_N -> Mp
@@ -196,6 +196,79 @@ void read(string fileName, vector<Band> &v) { // Read MTL file
 //   return b.K2 / (log((b.K1 / radiance(b, pixel)) + 1));
 // }
 
+/*
+  L_lambda = (Ml)*(Qcal) + Al
+  RADIANCE_MULT_BAND_N -> Ml
+  RADIANCE_ADD_BAND_N -> Al
+  Qcal -> current pixel of the band
+*/
+int radiance(Band &b, int pixel) {
+  return b.RADIANCE_MULT_BAND * pixel + b.RADIANCE_ADD_BAND;
+}
+
+void getRadiance(TIFF *image, Band &b, string path) {
+  uint32 height, width;
+  uint16 SamplesPerPixel, BitsPerSample;
+
+	TIFFGetField(image, TIFFTAG_IMAGEWIDTH, &width);
+	TIFFGetField(image, TIFFTAG_IMAGELENGTH, &height);
+  TIFFGetField(image, TIFFTAG_SAMPLESPERPIXEL, &SamplesPerPixel);
+  TIFFGetField(image, TIFFTAG_BITSPERSAMPLE, &BitsPerSample);
+
+  //------Creates image for radiance information---
+  string fileName = path + "radiance_B" + toString(b.bandNumber + 1);
+  TIFF *tif = TIFFOpen(fileName.c_str(),"w");
+	if (!tif) {
+		fprintf (stderr,"Error opening tiff!\n");
+		exit(0);
+	}
+  b.radiance_fileName = fileName;
+
+  TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
+	TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
+	TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, SamplesPerPixel);
+	TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, BitsPerSample);
+	TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
+	TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+	TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, 1);
+
+  //----------------------------------------------------
+
+  tsize_t linebytes = SamplesPerPixel * width; // length in memory of one row of pixel in the image.
+	unsigned char *buf = NULL; // buffer used to store the row of pixel information for writing to file
+
+  buf = (unsigned char *)_TIFFmalloc(TIFFScanlineSize(tif));
+	if (buf == NULL){
+		cerr << "Could not allocate memory!" << endl;
+		return;
+	}
+
+  // We set the strip size of the file to be size of one row of pixels
+  TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, TIFFDefaultStripSize(tif, width * SamplesPerPixel));
+
+	for (uint32 row = 0; row < height; row++) {
+		int n = TIFFReadScanline(image, buf, row, 0); // gets all the row
+		if (n == -1) {
+			printf("Error");
+			return;
+		}
+		for (int col = 0; col < width; col++) {
+			buf[col] = radiance(b, buf[col]);
+		}
+    TIFFWriteScanline(tif, buf, row, 0);
+	}
+  (void) TIFFClose(tif);
+	if (buf) _TIFFfree(buf);
+}
+
+void getReflectance(TIFF *image, Band b, string path) {
+
+}
+
+void getTemperature(TIFF *image, Band b, string path) {
+
+}
+
 int main(int argc, char **argv) {
   if (argc != 3) {
     cerr << "Usage: <images path> <mtl path>" << endl;
@@ -203,9 +276,38 @@ int main(int argc, char **argv) {
   }
   vector<Band> v(7);
   string imagesPath(argv[1]);
-  string mtlPath(argv[2]);
-  read(mtlPath, v);
-  cout << "------------" << endl;
-  for (auto e : v) e.getInfo();
+  string mtl_fileName(argv[2]);
+  read(mtl_fileName, v, imagesPath);
+  // cout << "------------" << endl;
+  // for (auto e : v) e.getInfo();
+
+	uint32 width, height;
+	int row, col, imagesize;
+	int nsamples;
+
+	uint16 BitsPerSample; // establece el numero de bits que se utilizan para codificar cada uno de los pixeles
+												// puede utilizar 8, 16, 32 o 64 bits por pixel
+	uint16 SamplesPerPixel; // escala de grises -> 1, a color -> 3
+	uint16 i;
+	uint16 RowPerStrip; // número de filas de cada strip
+	uint16 TileWidth; // numero de columnas en cada tile
+	uint16 TileLength; // numero de filas en cada tile
+  TIFF *image;
+
+  for (int i = 0; i < 1; i++) { // se calcula lo mismo para todas las bandas
+    image = TIFFOpen(v[i].fileName.c_str(), "r");
+    if(image == NULL){
+  		cerr << "Could not open incoming image of band " << v[i].bandNumber << endl;
+  		continue;
+  	}
+    getRadiance(image, v[i], "./images/");
+    if (v[i].bandNumber == 5) { // la banda 6 se le aplica otro tipo de procesamiento
+      getTemperature(image, v[i], "./images/"); // temperatura física del terreno
+    } else {
+      getReflectance(image, v[i], "./images/");
+    }
+    TIFFClose(image);
+  }
+
   return 0;
 }
