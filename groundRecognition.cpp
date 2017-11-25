@@ -179,23 +179,6 @@ void read(string fileName, vector<Band> &v, string path) { // Read MTL file
   }
 }
 
-/* with angular correction
-  p_lambda = ((Mp)*(Qcal) + Ap) / sin(theta_SE)
-  REFLECTANCE_MULT_BAND_N -> Mp
-  REFLECTANCE_ADD_BAND_N -> Ap
-  Qcal -> current pixel of the band
-*/
-// int reflectance(Band b, int pixel) {
-//   return (b.REFLECTANCE_MULT_BAND * b.m[pixel] + b.REFLECTANCE_ADD_BAND) / sin(theta_SE);;
-// }
-
-/*
- T = K2 / (ln ( (K1 / L_lambda) + 1 ) )
-*/
-// int T(Band b, int pixel) {
-//   return b.K2 / (log((b.K1 / radiance(b, pixel)) + 1));
-// }
-
 /*
   L_lambda = (Ml)*(Qcal) + Al
   RADIANCE_MULT_BAND_N -> Ml
@@ -261,9 +244,77 @@ void getRadiance(TIFF *image, Band &b, string path) {
 	if (buf) _TIFFfree(buf);
 }
 
-void getReflectance(TIFF *image, Band b, string path) {
-
+/* with angular correction
+  p_lambda = ((Mp)*(Qcal) + Ap) / sin(theta_SE)
+  REFLECTANCE_MULT_BAND_N -> Mp
+  REFLECTANCE_ADD_BAND_N -> Ap
+  Qcal -> current pixel of the band
+*/
+int reflectance(Band &b, int pixel) {
+  return (b.REFLECTANCE_MULT_BAND * pixel + b.REFLECTANCE_ADD_BAND) / sin(theta_SE);;
 }
+
+void getReflectance(TIFF *image, Band &b, string path) {
+  uint32 height, width;
+  uint16 SamplesPerPixel, BitsPerSample;
+
+	TIFFGetField(image, TIFFTAG_IMAGEWIDTH, &width);
+	TIFFGetField(image, TIFFTAG_IMAGELENGTH, &height);
+  TIFFGetField(image, TIFFTAG_SAMPLESPERPIXEL, &SamplesPerPixel);
+  TIFFGetField(image, TIFFTAG_BITSPERSAMPLE, &BitsPerSample);
+
+  //------Creates image for radiance information---
+  string fileName = path + "reflectance_B" + toString(b.bandNumber + 1);
+  TIFF *tif = TIFFOpen(fileName.c_str(),"w");
+	if (!tif) {
+		fprintf (stderr,"Error opening tiff!\n");
+		exit(0);
+	}
+  b.radiance_fileName = fileName;
+
+  TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
+	TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
+	TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, SamplesPerPixel);
+	TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, BitsPerSample);
+	TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
+	TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+	TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, 1);
+
+  //----------------------------------------------------
+
+  tsize_t linebytes = SamplesPerPixel * width; // length in memory of one row of pixel in the image.
+	unsigned char *buf = NULL; // buffer used to store the row of pixel information for writing to file
+
+  buf = (unsigned char *)_TIFFmalloc(TIFFScanlineSize(tif));
+	if (buf == NULL){
+		cerr << "Could not allocate memory!" << endl;
+		return;
+	}
+
+  // We set the strip size of the file to be size of one row of pixels
+  TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, TIFFDefaultStripSize(tif, width * SamplesPerPixel));
+
+	for (uint32 row = 0; row < height; row++) {
+		int n = TIFFReadScanline(image, buf, row, 0); // gets all the row
+		if (n == -1) {
+			printf("Error");
+			return;
+		}
+		for (int col = 0; col < width; col++) {
+			buf[col] = reflectance(b, buf[col]);
+		}
+    TIFFWriteScanline(tif, buf, row, 0);
+	}
+  (void) TIFFClose(tif);
+	if (buf) _TIFFfree(buf);
+}
+
+/*
+ T = K2 / (ln ( (K1 / L_lambda) + 1 ) )
+*/
+// int T(Band b, int pixel) {
+//   return b.K2 / (log((b.K1 / radiance(b, pixel)) + 1));
+// }
 
 void getTemperature(TIFF *image, Band b, string path) {
 
