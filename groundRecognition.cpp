@@ -129,45 +129,53 @@ void read(string fileName, vector<Band> &v, string path) { // Read MTL file
           }
         }
       }
-    } else if (line == "  GROUP = RADIOMETRIC_RESCALING") {
-      smatch m;
-      int i = 0, l = 0;
-      vector<string> exps = {
-        "RADIANCE_MULT_BAND",
-        "RADIANCE_ADD_BAND",
-        "REFLECTANCE_MULT_BAND",
-        "REFLECTANCE_ADD_BAND"
-      };
-      string curr = exps[l];
-      string total_exp = "\\b(" + curr + "_)([^ ]*)";
-      regex e(total_exp);
-      string element = "", s = "";
+    } else if (line == "  GROUP = RADIOMETRIC_RESCALING") { // ARREGLAR
+      string element = "";
       while (element != "  END_GROUP = RADIOMETRIC_RESCALING") {
-        if (i >= v.size()) {
-          i = 0;
-          l++;
-          string curr = exps[l];
-          string total_exp = "\\b(" + curr + "_)([^ ]*)";
-          e = total_exp;
-        }
-        getline(infile, element);
-        s = element;
-        while (regex_search (s,m,e)) {
-          s = m.suffix().str();
+        for (int i = 0; i < 7; i++) { // RADIANCE_MULT_BAND
+          dbg(i);
+          getline(infile, element);
+          dbg(element);
           vector<string> splitted = split(element, '=');
-          if (l == 0) v[i++].RADIANCE_MULT_BAND = toDouble(splitted[1]);
-          if (l == 1) v[i++].RADIANCE_ADD_BAND = toDouble(splitted[1]);
-          if (l == 2) {
-            if (i == 5) {
-              v[++i].REFLECTANCE_MULT_BAND = toDouble(splitted[1]);
-            } else v[i++].REFLECTANCE_MULT_BAND = toDouble(splitted[1]);
-          }
-          if (l == 3) {
-            if (i == 5) {
-              v[++i].REFLECTANCE_ADD_BAND = toDouble(splitted[1]);
-            } else v[i++].REFLECTANCE_ADD_BAND = toDouble(splitted[1]);
-          }
+          dbg(splitted[1]);
+          dbg(toDouble(splitted[1]));
+          v[i].RADIANCE_MULT_BAND = toDouble(splitted[1]);
         }
+        cout << "-------------" << endl;
+        for (int i = 0; i < 7; i++) { // RADIANCE_ADD_BAND
+          dbg(i);
+          getline(infile, element);
+          dbg(element);
+          vector<string> splitted = split(element, '=');
+          dbg(splitted[1]);
+          dbg(toDouble(splitted[1]));
+          v[i].RADIANCE_ADD_BAND = toDouble(splitted[1]);
+        }
+        cout << "-------------" << endl;
+        for (int i = 0; i < 6; i++) { // REFLECTANCE_MULT_BAND
+          dbg(i);
+          getline(infile, element);
+          dbg(element);
+          vector<string> splitted = split(element, '=');
+          dbg(splitted[1]);
+          dbg(toDouble(splitted[1]));
+          if (i == 5) i++; // put it in the next band
+          v[i].REFLECTANCE_MULT_BAND = toDouble(splitted[1]);
+        }
+        cout << "-------------" << endl;
+        for (int i = 0; i < 6; i++) { // REFLECTANCE_ADD_BAND
+          dbg(i);
+          getline(infile, element);
+          dbg(element);
+          vector<string> splitted = split(element, '=');
+          dbg(splitted[1]);
+          dbg(toDouble(splitted[1]));
+          if (i == 5) i++; // put it in the next band
+          v[i].REFLECTANCE_ADD_BAND = toDouble(splitted[1]);
+        }
+        cout << "-------------" << endl;
+        cout << "FINISHED!" << endl;
+        break;
       }
     } else if (line == "  GROUP = THERMAL_CONSTANTS") {
       string element;
