@@ -8,8 +8,7 @@
 using namespace std;
 
 void print(TIFF *image, uint32 height, uint32 width) {
-	//allocate memory for reading tif image
-	// scanline = (unsigned char *)_TIFFmalloc(SamplesPerPixel * width);
+
 	tsize_t scanline_size = TIFFScanlineSize(image);
 	unsigned char *scanline = NULL, *buf = NULL;
 
@@ -20,7 +19,6 @@ void print(TIFF *image, uint32 height, uint32 width) {
 		exit(0);
 	}
 
-	// FILE *f = fopen("tiffio_matrix.out", "w");
 	for (int row = 0; row < height; row++) {
 		int n = TIFFReadScanline(image, scanline, row, 0); // gets all the row
 		if (n == -1) {
@@ -29,22 +27,14 @@ void print(TIFF *image, uint32 height, uint32 width) {
 		}
 		for (int col = 0; col < width; col++) {
 			printf("%d ", scanline[col]);
-			// fprintf(f, "%d ", scanline[col]);
 		}
 		printf("\n");
-		// fprintf(f, "\n");
 	}
 
 	// fclose(f);
-
+	if (buf)
+    	_TIFFfree(buf);
 	_TIFFfree(scanline); //free allocate memory
-}
-
-int clamp(int const &value){
-	if(value >= 250)
-		return 250;
-	else
-		return value;
 }
 
 void colorImage(TIFF *blue, TIFF *green, TIFF *red, uint32 height, uint32 width){
@@ -60,10 +50,6 @@ void colorImage(TIFF *blue, TIFF *green, TIFF *red, uint32 height, uint32 width)
 	scanline_green = (unsigned char *)_TIFFmalloc(scanline_size_green);
 	scanline_red = (unsigned char *)_TIFFmalloc(scanline_size_red);
 
-	buf_blue = (unsigned char *)_TIFFmalloc(scanline_size_blue);
-	buf_green = (unsigned char *)_TIFFmalloc(scanline_size_green);
-	buf_red = (unsigned char *)_TIFFmalloc(scanline_size_red);
-
 
 	if (scanline_blue == NULL or scanline_green == NULL or scanline_red == NULL){
 		fprintf (stderr,"Could not allocate memory!\n");
@@ -74,10 +60,9 @@ void colorImage(TIFF *blue, TIFF *green, TIFF *red, uint32 height, uint32 width)
 	
 	uint16 SamplesPerPixel, BitsPerSample;
 
-	TIFFGetField(blue, TIFFTAG_SAMPLESPERPIXEL, &SamplesPerPixel);
-	TIFFGetField(blue, TIFFTAG_BITSPERSAMPLE, &BitsPerSample);
-
+	SamplesPerPixel = 3;
 	TIFF *tif = TIFFOpen("images/outImage.TIFF","w");
+	char *image = new char[width*height*SamplesPerPixel];
 
 	if (!tif) {
 		fprintf (stderr,"Error opening tiff!\n");
@@ -86,16 +71,20 @@ void colorImage(TIFF *blue, TIFF *green, TIFF *red, uint32 height, uint32 width)
 	TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
 	TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
 	TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, SamplesPerPixel);
-	TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, BitsPerSample);
+	TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 8);
 	TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
 
 	TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
-	TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, 1);
+	TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB);
 
 	tsize_t linebytes = SamplesPerPixel * width; // length in memory of one row of pixel in the image.
 	unsigned char *buf = NULL; // buffer used to store the row of pixel information for writing to file
 
-	buf = (unsigned char *)_TIFFmalloc(TIFFScanlineSize(tif));
+	/*if (TIFFScanlineSize(tif))
+	    buf =(unsigned char *)_TIFFmalloc(linebytes);
+	else
+		buf = (unsigned char *)_TIFFmalloc(TIFFScanlineSize(tif));*/
+	buf = (unsigned char *)_TIFFmalloc(width*SamplesPerPixel);
 
 	if (buf == NULL){
 		fprintf (stderr,"Could not allocate memory!\n");
@@ -105,27 +94,29 @@ void colorImage(TIFF *blue, TIFF *green, TIFF *red, uint32 height, uint32 width)
 	// We set the strip size of the file to be size of one row of pixels
 	TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, TIFFDefaultStripSize(tif, width * SamplesPerPixel));
 	//--------------------------------------------------------------------------
+	int row, col;
 
-
-	// FILE *f = fopen("tiffio_matrix.out", "w");
-	for (int row = 0; row < height; row++) {
-		int m = TIFFReadScanline(blue, scanline_blue, row, 0); // gets all the row
-		int n = TIFFReadScanline(green, scanline_green, row, 0); // gets all the row
-		int p = TIFFReadScanline(red, scanline_red, row, 0); // gets all the row
+	
+	for (row = 0; row < height; row++) {
+		int m = TIFFReadScanline(blue, scanline_blue, row); // gets all the row
+		int n = TIFFReadScanline(green, scanline_green, row); // gets all the row
+		int p = TIFFReadScanline(red, scanline_red, row); // gets all the row
 
 		if (n == -1 or m == -1 or p == -1) {
 			printf("Error");
 			exit(1);
 		}
 
-		for (int col = 0; col < width; col++) {
-			//printf("%d ", scanline[col]);
-			// fprintf(f, "%d ", scanline[col]);
-			int pixel = scanline_blue[col] + scanline_green[col] + scanline_red[col]; 
-			buf[col] = clamp(pixel);
+		for (col = 0; col < width; col++) {
+			
+			buf[col + 0] = scanline_blue[col];  			
+			buf[col + 1] = scanline_green[col];  			
+			buf[col + 2] = scanline_red[col];  			
+			
 		}
-		TIFFWriteScanline(tif, buf, row, 0);
-		printf("\n");
+
+		TIFFWriteScanline(tif, buf, row);
+		//printf("\n");
 		// fprintf(f, "\n");
 	}
 
@@ -240,7 +231,7 @@ int main(int argc, char **argv) {
 	imagesize = height * width;	//get image size
 	dbg(imagesize);
 
-	// print(image, height, width);
+	//print(red, height, width);
 	//write(image, "./images/out.tiff");
 	colorImage(blue, green, red, height, width);
 	TIFFClose(blue);
