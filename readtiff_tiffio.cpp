@@ -136,6 +136,6 @@ int main(int argc, char **argv) {
 	dbg(imagesize);
 
 	// print(image, height, width);
-	write(image, "./images/out.tiff");
+	// write(image, "./images/out.tiff");
 	TIFFClose(image);
 }
