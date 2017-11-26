@@ -1,4 +1,4 @@
-# Filtro Sobel
+# Image Natural color
 
 ### Para compilar:
 
@@ -11,12 +11,12 @@ cmake -DCUDA_USE_STATIC_CUDA_RUNTIME=OFF ..
 make
 ```
 
-Esto generará el ejecutable _a.out_
+Esto generará el ejecutable _NaturalColor.out_
 
 ### Para ejecutar:
 
 En la carpeta _build_ escribir lo siguiente:
 
 ```bash
-./global.out imagePath
+./NaturalColor.out imagePath
 ```
