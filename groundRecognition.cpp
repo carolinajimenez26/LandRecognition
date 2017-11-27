@@ -190,6 +190,34 @@ void read(string fileName, vector<Band> &v, string path) { // Read MTL file
   }
 }
 
+TIFF* createImage(TIFF *image, string fileName) {
+  uint32 height, width;
+  uint16 SamplesPerPixel, BitsPerSample, PHOTOMETRIC;
+
+  TIFFGetField(image, TIFFTAG_IMAGEWIDTH, &width);
+  TIFFGetField(image, TIFFTAG_IMAGELENGTH, &height);
+  TIFFGetField(image, TIFFTAG_SAMPLESPERPIXEL, &SamplesPerPixel);
+  TIFFGetField(image, TIFFTAG_BITSPERSAMPLE, &BitsPerSample);
+  TIFFGetField(image, TIFFTAG_PHOTOMETRIC, &PHOTOMETRIC);
+
+  TIFF *tif = TIFFOpen(fileName.c_str(),"w");
+  if (!tif) {
+    fprintf (stderr,"Error opening tiff!\n");
+    return NULL;
+  }
+
+  TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
+  TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
+  TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, SamplesPerPixel);
+  TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, BitsPerSample);
+  TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
+  TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+  TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC);
+  TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, TIFFDefaultStripSize(tif, width * SamplesPerPixel));
+
+  return tif;
+}
+
 pair<double,double> getMinAndMax(TIFF *image, int height, int width, double *buf) {
   double min = numeric_limits<double>::max();
   double max = numeric_limits<double>::min();
@@ -220,8 +248,6 @@ void normalize(string fileName, string normalized_fileName) {
   TIFFGetField(image, TIFFTAG_IMAGEWIDTH, &width);
   TIFFGetField(image, TIFFTAG_IMAGELENGTH, &height);
   TIFFGetField(image, TIFFTAG_SAMPLESPERPIXEL, &SamplesPerPixel);
-  TIFFGetField(image, TIFFTAG_BITSPERSAMPLE, &BitsPerSample);
-  TIFFGetField(image, TIFFTAG_PHOTOMETRIC, &PHOTOMETRIC);
 
   double *buf2 = NULL;
 
@@ -233,19 +259,9 @@ void normalize(string fileName, string normalized_fileName) {
 
   pair<double, double> p = getMinAndMax(image, height, width, buf2);
 
-  TIFF *tif = TIFFOpen(normalized_fileName.c_str(),"w");
-	if (!tif) {
-		fprintf (stderr,"Error opening tiff!\n");
-		exit(0);
-	}
+  TIFF *tif = createImage(image, normalized_fileName);
 
-  TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
-	TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
-	TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, SamplesPerPixel);
-	TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, BitsPerSample);
-	TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
-	TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
-	TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC);
+	if (!tif) return;
 
   double *buf = NULL;
   buf = (double *)_TIFFmalloc(width * SamplesPerPixel * sizeof(double));
@@ -284,34 +300,21 @@ double radiance(Band &b, int pixel) {
 
 void getRadiance(TIFF *image, Band &b, string path) {
   uint32 height, width;
-  uint16 SamplesPerPixel, BitsPerSample, PHOTOMETRIC;
+  uint16 SamplesPerPixel;
 
-	TIFFGetField(image, TIFFTAG_IMAGEWIDTH, &width);
-	TIFFGetField(image, TIFFTAG_IMAGELENGTH, &height);
+  TIFFGetField(image, TIFFTAG_IMAGEWIDTH, &width);
+  TIFFGetField(image, TIFFTAG_IMAGELENGTH, &height);
   TIFFGetField(image, TIFFTAG_SAMPLESPERPIXEL, &SamplesPerPixel);
-  TIFFGetField(image, TIFFTAG_BITSPERSAMPLE, &BitsPerSample);
-  TIFFGetField(image, TIFFTAG_PHOTOMETRIC, &PHOTOMETRIC);
 
-  //------Creates image for radiance information---
   string fileName = path + "radiance_B" + toString(b.bandNumber + 1) + ".TIF";
-  TIFF *tif = TIFFOpen(fileName.c_str(),"w");
-	if (!tif) {
-		fprintf (stderr,"Error opening tiff!\n");
-		exit(0);
-	}
-  b.radiance_fileName = fileName;
+  TIFF *tif = createImage(image, fileName);
 
-  TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
-	TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
-	TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, SamplesPerPixel);
-	TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, BitsPerSample);
-	TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
-	TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
-	TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC);
+  if (tif == NULL) return;
+
+  b.radiance_fileName = fileName;
 
   //----------------------------------------------------
 
-  tsize_t linebytes = SamplesPerPixel * width; // length in memory of one row of pixel in the image.
 	double *buf = NULL; // buffer used to store the row of pixel information for writing to file
 
   buf = (double *)_TIFFmalloc(width * SamplesPerPixel * sizeof(double));
@@ -319,9 +322,6 @@ void getRadiance(TIFF *image, Band &b, string path) {
 		cerr << "Could not allocate memory!" << endl;
 		return;
 	}
-
-  // We set the strip size of the file to be size of one row of pixels
-  TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, TIFFDefaultStripSize(tif, width * SamplesPerPixel));
 
 	for (uint32 row = 0; row < height; row++) {
 		int n = TIFFReadScanline(image, buf, row, 0); // gets all the row
@@ -370,34 +370,19 @@ double reflectance2(Band &b, int pixel, int rad_pixel) {
 
 void getReflectance(TIFF *image, Band &b, string path) {
   uint32 height, width;
-  uint16 SamplesPerPixel, BitsPerSample, PHOTOMETRIC;
+  uint16 SamplesPerPixel;
 
 	TIFFGetField(image, TIFFTAG_IMAGEWIDTH, &width);
 	TIFFGetField(image, TIFFTAG_IMAGELENGTH, &height);
   TIFFGetField(image, TIFFTAG_SAMPLESPERPIXEL, &SamplesPerPixel);
-  TIFFGetField(image, TIFFTAG_BITSPERSAMPLE, &BitsPerSample);
-  TIFFGetField(image, TIFFTAG_PHOTOMETRIC, &PHOTOMETRIC);
 
   //------Creates image for radiance information---
   string fileName = path + "reflectance_B" + toString(b.bandNumber + 1) + ".TIF";
-  TIFF *tif = TIFFOpen(fileName.c_str(),"w");
-	if (!tif) {
-		fprintf (stderr,"Error opening tiff!\n");
-		exit(0);
-	}
+  TIFF *tif = createImage(image, fileName);
+	if (!tif) return;
+
   b.reflectance_fileName = fileName;
 
-  TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
-	TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
-	TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, SamplesPerPixel);
-	TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, BitsPerSample);
-	TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
-	TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
-	TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC);
-
-  //----------------------------------------------------
-
-  tsize_t linebytes = SamplesPerPixel * width; // length in memory of one row of pixel in the image.
 	double *buf = NULL; // buffer used to store the row of pixel information for writing to file
 
   buf = (double *)_TIFFmalloc(width * SamplesPerPixel * sizeof(double));
@@ -405,9 +390,6 @@ void getReflectance(TIFF *image, Band &b, string path) {
 		cerr << "Could not allocate memory!" << endl;
 		return;
 	}
-
-  // We set the strip size of the file to be size of one row of pixels
-  TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, TIFFDefaultStripSize(tif, width * SamplesPerPixel));
 
 	for (uint32 row = 0; row < height; row++) {
 		int n = TIFFReadScanline(image, buf, row, 0); // gets all the row
@@ -433,34 +415,20 @@ double T(Band &b, int pixel) {
 
 void getTemperature(TIFF *image, Band &b, string path) {
   uint32 height, width;
-  uint16 SamplesPerPixel, BitsPerSample, PHOTOMETRIC;
+  uint16 SamplesPerPixel;
 
 	TIFFGetField(image, TIFFTAG_IMAGEWIDTH, &width);
 	TIFFGetField(image, TIFFTAG_IMAGELENGTH, &height);
   TIFFGetField(image, TIFFTAG_SAMPLESPERPIXEL, &SamplesPerPixel);
-  TIFFGetField(image, TIFFTAG_BITSPERSAMPLE, &BitsPerSample);
-  TIFFGetField(image, TIFFTAG_PHOTOMETRIC, &PHOTOMETRIC);
 
   //------Creates image for radiance information---
   string fileName = path + "temperature_B" + toString(b.bandNumber + 1) + ".TIF";
-  TIFF *tif = TIFFOpen(fileName.c_str(),"w");
-	if (!tif) {
-		fprintf (stderr,"Error opening tiff!\n");
-		exit(0);
-	}
+  TIFF *tif = createImage(image, fileName);
+
+  if (!tif) return;
+
   b.temperature_fileName = fileName;
 
-  TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
-	TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
-	TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, SamplesPerPixel);
-	TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, BitsPerSample);
-	TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
-	TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
-	TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC);
-
-  //----------------------------------------------------
-
-  tsize_t linebytes = SamplesPerPixel * width; // length in memory of one row of pixel in the image.
 	double *buf = NULL; // buffer used to store the row of pixel information for writing to file
 
   buf = (double *)_TIFFmalloc(width * SamplesPerPixel * sizeof(double));
@@ -468,9 +436,6 @@ void getTemperature(TIFF *image, Band &b, string path) {
 		cerr << "Could not allocate memory!" << endl;
 		return;
 	}
-
-  // We set the strip size of the file to be size of one row of pixels
-  TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, TIFFDefaultStripSize(tif, width * SamplesPerPixel));
 
 	for (uint32 row = 0; row < height; row++) {
 		int n = TIFFReadScanline(image, buf, row, 0); // gets all the row
@@ -495,33 +460,16 @@ double ndvi(Band &red, Band &infrared, int red_pixel, int infrared_pixel) {
 
 string getNDVI(TIFF *image_red, TIFF *image_infrared, Band &red, Band &infrared, string path) {
   uint32 height, width;
-  uint16 SamplesPerPixel, BitsPerSample, PHOTOMETRIC;
+  uint16 SamplesPerPixel;
 
 	TIFFGetField(image_red, TIFFTAG_IMAGEWIDTH, &width);
 	TIFFGetField(image_red, TIFFTAG_IMAGELENGTH, &height);
   TIFFGetField(image_red, TIFFTAG_SAMPLESPERPIXEL, &SamplesPerPixel);
-  TIFFGetField(image_red, TIFFTAG_BITSPERSAMPLE, &BitsPerSample);
-  TIFFGetField(image_red, TIFFTAG_PHOTOMETRIC, &PHOTOMETRIC);
 
-  //--------------------------------------------
   string fileName = path + "nvdi.TIF";
-  TIFF *tif = TIFFOpen(fileName.c_str(),"w");
-	if (!tif) {
-		fprintf (stderr,"Error opening tiff!\n");
-		exit(0);
-	}
+  TIFF *tif = createImage(image_red, fileName);
+	if (!tif) return "";
 
-  TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
-	TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
-	TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, SamplesPerPixel);
-	TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, BitsPerSample);
-	TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
-	TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
-	TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC);
-
-  //----------------------------------------------------
-
-  tsize_t linebytes = SamplesPerPixel * width; // length in memory of one row of pixel in the image.
 	unsigned char *buf_red = NULL, *buf_infrared = NULL; // buffer used to store the row of pixel information for writing to file
   double *buf = NULL;
 
@@ -543,9 +491,6 @@ string getNDVI(TIFF *image_red, TIFF *image_infrared, Band &red, Band &infrared,
 		return "";
 	}
 
-  // We set the strip size of the file to be size of one row of pixels
-  TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, TIFFDefaultStripSize(tif, width * SamplesPerPixel));
-
 	for (uint32 row = 0; row < height; row++) {
 		int n = TIFFReadScanline(image_red, buf_red, row, 0); // gets all the row
     int m = TIFFReadScanline(image_infrared, buf_infrared, row, 0); // gets all the row
@@ -554,8 +499,6 @@ string getNDVI(TIFF *image_red, TIFF *image_infrared, Band &red, Band &infrared,
 			return "";
 		}
 		for (int col = 0; col < width; col++) {
-      // int c = (int)round(ndvi(red, infrared, buf_red[col], buf_infrared[col]));
-			// buf[col] = (unsigned char)c;
       buf[col] = ndvi(red, infrared, buf_red[col], buf_infrared[col]);
 		}
     TIFFWriteScanline(tif, buf, row, 0);
@@ -580,33 +523,17 @@ double ndwi(Band &infrared, Band &medium_infrared, int infrared_pixel,
 string getNDWI(TIFF *image_infrared, TIFF *image_medium_infrared, Band &infrared,
               Band &medium_infrared, string path) {
   uint32 height, width;
-  uint16 SamplesPerPixel, BitsPerSample, PHOTOMETRIC;
+  uint16 SamplesPerPixel;
 
 	TIFFGetField(image_infrared, TIFFTAG_IMAGEWIDTH, &width);
 	TIFFGetField(image_infrared, TIFFTAG_IMAGELENGTH, &height);
   TIFFGetField(image_infrared, TIFFTAG_SAMPLESPERPIXEL, &SamplesPerPixel);
-  TIFFGetField(image_infrared, TIFFTAG_BITSPERSAMPLE, &BitsPerSample);
-  TIFFGetField(image_infrared, TIFFTAG_PHOTOMETRIC, &PHOTOMETRIC);
 
   //--------------------------------------------
   string fileName = path + "nwdi.TIF";
-  TIFF *tif = TIFFOpen(fileName.c_str(),"w");
-	if (!tif) {
-		fprintf (stderr,"Error opening tiff!\n");
-		exit(0);
-	}
+  TIFF *tif = createImage(image_infrared, fileName);
+	if (!tif) return "";
 
-  TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
-	TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
-	TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, SamplesPerPixel);
-	TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, BitsPerSample);
-	TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
-	TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
-	TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC);
-
-  //----------------------------------------------------
-
-  tsize_t linebytes = SamplesPerPixel * width; // length in memory of one row of pixel in the image.
 	unsigned char *buf = NULL, *buf_medium_infrared = NULL, *buf_infrared = NULL; // buffer used to store the row of pixel information for writing to file
   double *buf2 = NULL;
 
@@ -633,10 +560,7 @@ string getNDWI(TIFF *image_infrared, TIFF *image_medium_infrared, Band &infrared
 		cerr << "Could not allocate memory!" << endl;
 		return "";
 	}
-
-  // We set the strip size of the file to be size of one row of pixels
-  TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, TIFFDefaultStripSize(tif, width * SamplesPerPixel));
-
+  
 	for (uint32 row = 0; row < height; row++) {
 		int n = TIFFReadScanline(image_medium_infrared, buf_medium_infrared, row, 0); // gets all the row
     int m = TIFFReadScanline(image_infrared, buf_infrared, row, 0); // gets all the row
