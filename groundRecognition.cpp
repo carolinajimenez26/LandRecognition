@@ -6,6 +6,7 @@
 #include <vector>
 #include <regex>
 #include <tiffio.h>
+#include <utility> // pair
 #define INF numeric_limits<int>::max()
 #define dbg(x) cout << #x << ": " << x << endl
 double d; // EARTH_SUN_DISTANCE
@@ -189,6 +190,88 @@ void read(string fileName, vector<Band> &v, string path) { // Read MTL file
   }
 }
 
+pair<double,double> getMinAndMax(TIFF *image, int height, int width, double *buf) {
+  double min = numeric_limits<double>::max();
+  double max = numeric_limits<double>::min();
+  // FIND THE MINIMUM AND MAXIMUM
+  for (uint32 row = 0; row < height; row++) {
+		int n = TIFFReadScanline(image, buf, row, 0); // gets all the row
+		if (n == -1) {
+			printf("Error");
+			return make_pair(min, max);
+		}
+		for (int col = 0; col < width; col++) {
+      if (buf[col] > max) max = buf[col];
+      if (buf[col] < min) min = buf[col];
+		}
+	}
+  return make_pair(min, max);
+}
+
+void normalize(string fileName, string normalized_fileName) {
+  TIFF *image = TIFFOpen(fileName.c_str(),"r");
+	if (!image) {
+		fprintf (stderr,"Error opening tiff!\n");
+		exit(0);
+	}
+  uint32 height, width;
+  uint16 SamplesPerPixel, BitsPerSample, PHOTOMETRIC;
+
+  TIFFGetField(image, TIFFTAG_IMAGEWIDTH, &width);
+  TIFFGetField(image, TIFFTAG_IMAGELENGTH, &height);
+  TIFFGetField(image, TIFFTAG_SAMPLESPERPIXEL, &SamplesPerPixel);
+  TIFFGetField(image, TIFFTAG_BITSPERSAMPLE, &BitsPerSample);
+  TIFFGetField(image, TIFFTAG_PHOTOMETRIC, &PHOTOMETRIC);
+
+  double *buf2 = NULL;
+
+  buf2 = (double *)_TIFFmalloc(width * SamplesPerPixel * sizeof(double));
+  if (buf2 == NULL){
+    cerr << "Could not allocate memory!" << endl;
+    return;
+  }
+
+  pair<double, double> p = getMinAndMax(image, height, width, buf2);
+
+  TIFF *tif = TIFFOpen(normalized_fileName.c_str(),"w");
+	if (!tif) {
+		fprintf (stderr,"Error opening tiff!\n");
+		exit(0);
+	}
+
+  TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
+	TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
+	TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, SamplesPerPixel);
+	TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, BitsPerSample);
+	TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
+	TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+	TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC);
+
+  double *buf = NULL;
+  buf = (double *)_TIFFmalloc(width * SamplesPerPixel * sizeof(double));
+  if (buf == NULL){
+    cerr << "Could not allocate memory!" << endl;
+    return;
+  }
+
+  for (uint32 row = 0; row < height; row++) {
+		int n = TIFFReadScanline(image, buf2, row, 0); // gets all the row
+		if (n == -1) {
+			printf("Error");
+      return;
+		}
+		for (int col = 0; col < width; col++) {
+      double c = ((buf2[col] - p.first) * (255 / (p.second - p.first)));
+      buf[col] = c;
+    }
+    TIFFWriteScanline(tif, buf, row, 0);
+	}
+  (void) TIFFClose(image);
+  (void) TIFFClose(tif);
+	if (buf) _TIFFfree(buf);
+  if (buf2) _TIFFfree(buf2);
+}
+
 /*
   L_lambda = (Ml)*(Qcal) + Al
   RADIANCE_MULT_BAND_N -> Ml
@@ -229,9 +312,9 @@ void getRadiance(TIFF *image, Band &b, string path) {
   //----------------------------------------------------
 
   tsize_t linebytes = SamplesPerPixel * width; // length in memory of one row of pixel in the image.
-	unsigned char *buf = NULL; // buffer used to store the row of pixel information for writing to file
+	double *buf = NULL; // buffer used to store the row of pixel information for writing to file
 
-  buf = (unsigned char *)_TIFFmalloc(TIFFScanlineSize(tif));
+  buf = (double *)_TIFFmalloc(width * SamplesPerPixel * sizeof(double));
 	if (buf == NULL){
 		cerr << "Could not allocate memory!" << endl;
 		return;
@@ -247,8 +330,7 @@ void getRadiance(TIFF *image, Band &b, string path) {
 			return;
 		}
 		for (int col = 0; col < width; col++) {
-      int c = (int)round(radiance(b, buf[col]));
-			buf[col] = (unsigned char)c;
+			buf[col] = radiance(b, buf[col]);
 		}
     TIFFWriteScanline(tif, buf, row, 0);
 	}
@@ -263,8 +345,8 @@ void getRadiance(TIFF *image, Band &b, string path) {
   Qcal -> current pixel of the band
 */
 double reflectance(Band &b, int pixel) {
-  // double theta = (theta_SE * M_PI) / 180, value = 0;
-  double value = (b.REFLECTANCE_MULT_BAND * pixel + b.REFLECTANCE_ADD_BAND) / sin(theta_SE);
+  double theta = (theta_SE * M_PI) / 180;
+  double value = (b.REFLECTANCE_MULT_BAND * pixel + b.REFLECTANCE_ADD_BAND) / sin(theta);
   // return (value < 0 ? 0 : value);
   return value;
 }
@@ -289,12 +371,6 @@ double reflectance2(Band &b, int pixel, int rad_pixel) {
 void getReflectance(TIFF *image, Band &b, string path) {
   uint32 height, width;
   uint16 SamplesPerPixel, BitsPerSample, PHOTOMETRIC;
-
-  TIFF *image_rad = TIFFOpen(b.radiance_fileName.c_str(), "r");
-  if(image_rad == NULL){
-    cerr << "Could not open radiance image of band " << b.bandNumber << endl;
-    return;
-  }
 
 	TIFFGetField(image, TIFFTAG_IMAGEWIDTH, &width);
 	TIFFGetField(image, TIFFTAG_IMAGELENGTH, &height);
@@ -322,16 +398,10 @@ void getReflectance(TIFF *image, Band &b, string path) {
   //----------------------------------------------------
 
   tsize_t linebytes = SamplesPerPixel * width; // length in memory of one row of pixel in the image.
-	unsigned char *buf = NULL, *buf_rad = NULL; // buffer used to store the row of pixel information for writing to file
+	double *buf = NULL; // buffer used to store the row of pixel information for writing to file
 
-  buf = (unsigned char *)_TIFFmalloc(TIFFScanlineSize(tif));
-	if (buf == NULL){
-		cerr << "Could not allocate memory!" << endl;
-		return;
-	}
-
-  buf_rad = (unsigned char *)_TIFFmalloc(TIFFScanlineSize(image_rad));
-	if (buf_rad == NULL){
+  buf = (double *)_TIFFmalloc(width * SamplesPerPixel * sizeof(double));
+	if (buf == NULL) {
 		cerr << "Could not allocate memory!" << endl;
 		return;
 	}
@@ -341,22 +411,17 @@ void getReflectance(TIFF *image, Band &b, string path) {
 
 	for (uint32 row = 0; row < height; row++) {
 		int n = TIFFReadScanline(image, buf, row, 0); // gets all the row
-    int m = TIFFReadScanline(image_rad, buf_rad, row, 0); // gets all the row
-		if (n == -1 or m == -1) {
+		if (n == -1) {
 			printf("Error");
 			return;
 		}
 		for (int col = 0; col < width; col++) {
-      int c = (int)round(reflectance(b, buf[col]));
-      buf[col] = (unsigned char)c;
+      buf[col] = reflectance(b, buf[col]);
 		}
     TIFFWriteScanline(tif, buf, row, 0);
 	}
   (void) TIFFClose(tif);
 	if (buf) _TIFFfree(buf);
-
-  (void) TIFFClose(image_rad);
-	if (buf_rad) _TIFFfree(buf_rad);
 }
 
 /*
@@ -396,10 +461,10 @@ void getTemperature(TIFF *image, Band &b, string path) {
   //----------------------------------------------------
 
   tsize_t linebytes = SamplesPerPixel * width; // length in memory of one row of pixel in the image.
-	unsigned char *buf = NULL; // buffer used to store the row of pixel information for writing to file
+	double *buf = NULL; // buffer used to store the row of pixel information for writing to file
 
-  buf = (unsigned char *)_TIFFmalloc(TIFFScanlineSize(tif));
-	if (buf == NULL){
+  buf = (double *)_TIFFmalloc(width * SamplesPerPixel * sizeof(double));
+	if (buf == NULL) {
 		cerr << "Could not allocate memory!" << endl;
 		return;
 	}
@@ -414,8 +479,7 @@ void getTemperature(TIFF *image, Band &b, string path) {
 			return;
 		}
 		for (int col = 0; col < width; col++) {
-      int c = (int)round(T(b, buf[col]));
-			buf[col] = (unsigned char)c;
+			buf[col] = T(b, buf[col]);
 		}
     TIFFWriteScanline(tif, buf, row, 0);
 	}
@@ -458,9 +522,10 @@ string getNDVI(TIFF *image_red, TIFF *image_infrared, Band &red, Band &infrared,
   //----------------------------------------------------
 
   tsize_t linebytes = SamplesPerPixel * width; // length in memory of one row of pixel in the image.
-	unsigned char *buf = NULL, *buf_red = NULL, *buf_infrared = NULL; // buffer used to store the row of pixel information for writing to file
+	unsigned char *buf_red = NULL, *buf_infrared = NULL; // buffer used to store the row of pixel information for writing to file
+  double *buf = NULL;
 
-  buf = (unsigned char *)_TIFFmalloc(TIFFScanlineSize(tif));
+  buf = (double *)_TIFFmalloc(width * SamplesPerPixel * sizeof(double));
 	if (buf == NULL){
 		cerr << "Could not allocate memory!" << endl;
 		return "";
@@ -489,8 +554,9 @@ string getNDVI(TIFF *image_red, TIFF *image_infrared, Band &red, Band &infrared,
 			return "";
 		}
 		for (int col = 0; col < width; col++) {
-      int c = (int)round(ndvi(red, infrared, buf_red[col], buf_infrared[col]));
-			buf[col] = (unsigned char)c;
+      // int c = (int)round(ndvi(red, infrared, buf_red[col], buf_infrared[col]));
+			// buf[col] = (unsigned char)c;
+      buf[col] = ndvi(red, infrared, buf_red[col], buf_infrared[col]);
 		}
     TIFFWriteScanline(tif, buf, row, 0);
 	}
@@ -542,6 +608,13 @@ string getNDWI(TIFF *image_infrared, TIFF *image_medium_infrared, Band &infrared
 
   tsize_t linebytes = SamplesPerPixel * width; // length in memory of one row of pixel in the image.
 	unsigned char *buf = NULL, *buf_medium_infrared = NULL, *buf_infrared = NULL; // buffer used to store the row of pixel information for writing to file
+  double *buf2 = NULL;
+
+  buf2 = (double *)_TIFFmalloc(width * SamplesPerPixel * sizeof(double));
+	if (buf2 == NULL){
+		cerr << "Could not allocate memory!" << endl;
+		return "";
+	}
 
   buf = (unsigned char *)_TIFFmalloc(TIFFScanlineSize(tif));
 	if (buf == NULL){
@@ -572,20 +645,19 @@ string getNDWI(TIFF *image_infrared, TIFF *image_medium_infrared, Band &infrared
 			return "";
 		}
 		for (int col = 0; col < width; col++) {
-      int c = (int)round(ndvi(infrared, medium_infrared, buf_infrared[col], buf_medium_infrared[col]));
-			buf[col] = (unsigned char)c;
+      buf2[col] = ndwi(infrared, medium_infrared, buf_infrared[col], buf_medium_infrared[col]);
 		}
-    TIFFWriteScanline(tif, buf, row, 0);
+    TIFFWriteScanline(tif, buf2, row, 0);
 	}
   (void) TIFFClose(tif);
 	if (buf) _TIFFfree(buf);
+  if (buf2) _TIFFfree(buf2);
   (void) TIFFClose(image_medium_infrared);
 	if (buf_medium_infrared) _TIFFfree(buf_medium_infrared);
 	if (buf_infrared) _TIFFfree(buf_infrared);
 
   return fileName;
 }
-
 
 int main(int argc, char **argv) {
   if (argc != 3) {
@@ -612,10 +684,16 @@ int main(int argc, char **argv) {
   		continue;
   	}
     getRadiance(image, v[i], imagesPath);
+    normalize(v[i].radiance_fileName, imagesPath + "radiance_normalized_" +
+              toString(v[i].bandNumber) + ".TIF");
     if (v[i].bandNumber == 5) { // la banda 6 se le aplica otro tipo de procesamiento
       getTemperature(image, v[i], imagesPath); // temperatura física del terreno
+      normalize(v[i].temperature_fileName, imagesPath + "temperature_normalized_" +
+                toString(v[i].bandNumber) + ".TIF");
     } else {
       getReflectance(image, v[i], imagesPath);
+      normalize(v[i].reflectance_fileName, imagesPath + "reflectance_normalized_" +
+                toString(v[i].bandNumber) + ".TIF");
     }
     if (v[i].bandNumber == 2) {
       image_tmp = image;
@@ -640,6 +718,8 @@ int main(int argc, char **argv) {
       dbg(ndwi_path);
     }
   }
+  normalize(ndvi_path, imagesPath + "ndvi_normalized.TIF");
+  normalize(ndwi_path, imagesPath + "ndwi_normalized.TIF");
   TIFFClose(image);
 
   return 0;
