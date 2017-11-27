@@ -247,7 +247,7 @@ void getRadiance(TIFF *image, Band &b, string path) {
 			return;
 		}
 		for (int col = 0; col < width; col++) {
-      int c = radiance(b, buf[col]);
+      int c = (int)round(radiance(b, buf[col]));
 			buf[col] = (unsigned char)c;
 		}
     TIFFWriteScanline(tif, buf, row, 0);
@@ -263,8 +263,8 @@ void getRadiance(TIFF *image, Band &b, string path) {
   Qcal -> current pixel of the band
 */
 double reflectance(Band &b, int pixel) {
-  double theta = (theta_SE * M_PI) / 180, value = 0;
-  value = (b.REFLECTANCE_MULT_BAND * pixel + b.REFLECTANCE_ADD_BAND) / sin(theta);
+  // double theta = (theta_SE * M_PI) / 180, value = 0;
+  double value = (b.REFLECTANCE_MULT_BAND * pixel + b.REFLECTANCE_ADD_BAND) / sin(theta_SE);
   // return (value < 0 ? 0 : value);
   return value;
 }
@@ -347,8 +347,7 @@ void getReflectance(TIFF *image, Band &b, string path) {
 			return;
 		}
 		for (int col = 0; col < width; col++) {
-      // int c = reflectance2(b, buf[col], buf_rad[col]);
-      int c = reflectance(b, buf[col]);
+      int c = (int)round(reflectance(b, buf[col]));
       buf[col] = (unsigned char)c;
 		}
     TIFFWriteScanline(tif, buf, row, 0);
@@ -415,7 +414,7 @@ void getTemperature(TIFF *image, Band &b, string path) {
 			return;
 		}
 		for (int col = 0; col < width; col++) {
-      int c = T(b, buf[col]);
+      int c = (int)round(T(b, buf[col]));
 			buf[col] = (unsigned char)c;
 		}
     TIFFWriteScanline(tif, buf, row, 0);
@@ -490,7 +489,7 @@ string getNDVI(TIFF *image_red, TIFF *image_infrared, Band &red, Band &infrared,
 			return "";
 		}
 		for (int col = 0; col < width; col++) {
-      double c = ndvi(red, infrared, buf_red[col], buf_infrared[col]);
+      int c = (int)round(ndvi(red, infrared, buf_red[col], buf_infrared[col]));
 			buf[col] = (unsigned char)c;
 		}
     TIFFWriteScanline(tif, buf, row, 0);
@@ -573,7 +572,7 @@ string getNDWI(TIFF *image_infrared, TIFF *image_medium_infrared, Band &infrared
 			return "";
 		}
 		for (int col = 0; col < width; col++) {
-      double c = ndvi(infrared, medium_infrared, buf_infrared[col], buf_medium_infrared[col]);
+      int c = (int)round(ndvi(infrared, medium_infrared, buf_infrared[col], buf_medium_infrared[col]));
 			buf[col] = (unsigned char)c;
 		}
     TIFFWriteScanline(tif, buf, row, 0);
