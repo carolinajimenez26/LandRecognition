@@ -28,7 +28,7 @@ void naturalColor(unsigned char *imagen1,unsigned char *imagen2,unsigned char *i
             resultado[pos+BLUE] = imagen1[pos+BLUE];
             resultado[pos+GREEN] = imagen2[pos+GREEN];
             resultado[pos+RED] = imagen3[pos+RED];
-                }
+        }
 	}
 }
 
