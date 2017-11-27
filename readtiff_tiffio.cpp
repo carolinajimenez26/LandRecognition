@@ -42,6 +42,11 @@ void colorImage(TIFF *blue, TIFF *green, TIFF *red, uint32 height, uint32 width)
 	tsize_t scanline_size_green = TIFFScanlineSize(green);
 	tsize_t scanline_size_red = TIFFScanlineSize(red);
 
+	dbg(scanline_size_blue);
+	dbg(scanline_size_green);
+	dbg(scanline_size_red);
+
+
 	unsigned char *scanline_blue = NULL, *buf_blue = NULL;
 	unsigned char *scanline_green = NULL, *buf_green = NULL;
 	unsigned char *scanline_red = NULL, *buf_red = NULL;
@@ -61,8 +66,8 @@ void colorImage(TIFF *blue, TIFF *green, TIFF *red, uint32 height, uint32 width)
 	uint16 SamplesPerPixel, BitsPerSample;
 
 	SamplesPerPixel = 3;
+	BitsPerSample = 8;
 	TIFF *tif = TIFFOpen("images/outImage.TIFF","w");
-	char *image = new char[width*height*SamplesPerPixel];
 
 	if (!tif) {
 		fprintf (stderr,"Error opening tiff!\n");
@@ -71,7 +76,7 @@ void colorImage(TIFF *blue, TIFF *green, TIFF *red, uint32 height, uint32 width)
 	TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
 	TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
 	TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, SamplesPerPixel);
-	TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 8);
+	TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, BitsPerSample);
 	TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
 
 	TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
@@ -90,7 +95,7 @@ void colorImage(TIFF *blue, TIFF *green, TIFF *red, uint32 height, uint32 width)
 		fprintf (stderr,"Could not allocate memory!\n");
 		exit(0);
 	}
-
+	
 	// We set the strip size of the file to be size of one row of pixels
 	TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, TIFFDefaultStripSize(tif, width * SamplesPerPixel));
 	//--------------------------------------------------------------------------
@@ -98,9 +103,9 @@ void colorImage(TIFF *blue, TIFF *green, TIFF *red, uint32 height, uint32 width)
 
 	
 	for (row = 0; row < height; row++) {
-		int m = TIFFReadScanline(blue, scanline_blue, row); // gets all the row
-		int n = TIFFReadScanline(green, scanline_green, row); // gets all the row
-		int p = TIFFReadScanline(red, scanline_red, row); // gets all the row
+		int m = TIFFReadScanline(blue, scanline_blue, row, 0); // gets all the row
+		int n = TIFFReadScanline(green, scanline_green, row, 0); // gets all the row
+		int p = TIFFReadScanline(red, scanline_red, row, 0); // gets all the row
 
 		if (n == -1 or m == -1 or p == -1) {
 			printf("Error");
@@ -115,7 +120,7 @@ void colorImage(TIFF *blue, TIFF *green, TIFF *red, uint32 height, uint32 width)
 			
 		}
 
-		TIFFWriteScanline(tif, buf, row);
+		TIFFWriteScanline(tif, buf, row, 0);
 		//printf("\n");
 		// fprintf(f, "\n");
 	}
