@@ -25,6 +25,10 @@ using namespace cv;
 
 #define theta_SE 65.46088663
 
+#define BLUE 0
+#define GREEN 1
+#define RED 2
+
 int clamp(int const &pixel){
     if (pixel > 255)
         return 255;
@@ -74,34 +78,57 @@ void setReflectance(unsigned char *data, int const &height, int const &width, in
 	}
 }
 
-double normalize(double I){
-	double min = -1.0, max = 1.0;
-	double temp = I - min;
-	return temp*(255.0/(max-min));
+void normalize(double const &min, double const &max, double *image, int const &height, int const &width, unsigned char *out){
+
+	int posGray, posResult;
+	for (int row = 0; row < height; row++){
+		for (int col = 0; col < width; col++){
+			posGray = (row*width)+col;
+			posResult = ((row*width)+col)*3;
+			double I = image[posGray];
+			double aux = I - min;
+			out[posResult + BLUE] = (int)round(aux*(255.0/(max-min))*0.114);
+			out[posResult + GREEN] = (int)round((aux*(255.0/(max-min)))*0.587);
+			out[posResult + RED] = (int)round((aux*(255.0/(max-min)))*0.299);
+		}
+	}
 }
 
 void setNDVI(unsigned char *shortWave, unsigned char *redVisible, unsigned char *result, int const &height, int const &width){
 
+	int posGray;
+	double minValue = -1.0, maxValue = 1.0;
 	double value = 0.0;
-	int i, posResult, posGray;
+	int size = sizeof(double)*width*height;
+	double *temp;
+	temp = (double*)malloc(size);  
+
+	int i, posResult;
 	for (int row = 0; row < height; row++){
 		for (int col = 0; col < width; col++){
 			posGray = (row*width)+col;
-			//posResult = ((row*width)+col)*3;
 			double aux1 = getReflectance(shortWave[posGray], 4);
 			double aux2 = getReflectance(redVisible[posGray], 3);
 
 			if (aux1 + aux2 != 0){
 				value = (aux1 - aux2) / (aux1 + aux2);
-				result[posGray] = normalize((double)value);
+				temp[posGray] = (double)value;
 				//cout << "NDVI: " <<(double)value << endl;
-			}else{
-				result[posGray] = normalize((double)redVisible[posGray]);
+			}else {
+				temp[posGray] = (double)redVisible[posGray];
 				//cout << "RED: " <<(double)redVisible[posGray] << endl;
 			}
-			//cout << (double)result[posResult] << endl;
+			/*	
+			if (temp[posGray] > maxValue)
+				maxValue = temp[posGray];
+			if (temp[posGray] < minValue)
+				minValue = temp[posGray];
+			*/
 		}
 	}
+
+	normalize(-1, 1, temp, height, width, result);
+
 }
 
 int main(int argc, char **argv)
@@ -149,17 +176,17 @@ int main(int argc, char **argv)
     Mat shortWaveRadiance;
     shortWaveRadiance.create(height,width,CV_8UC1);
     shortWaveRadiance.data = shortWave;
-    imwrite(".NIRradiance.png", shortWaveRadiance);
+    imwrite("./NIRradiance.png", shortWaveRadiance);
 
     //------------------------------------------------
 
-    int size = sizeof(unsigned char)*width*height;
+    int size = sizeof(unsigned char)*width*height*3;
     unsigned char* result;
     result = (unsigned char*)malloc(size); 
 
     setNDVI(shortWave, redVisible, result, height, width);
     Mat imageResult;
-    imageResult.create(height,width,CV_8UC1);
+    imageResult.create(height,width,CV_8UC3);
     imageResult.data = result;
 
     imwrite("./NDVIimage.jpg", imageResult);
