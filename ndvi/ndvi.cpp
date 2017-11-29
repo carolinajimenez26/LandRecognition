@@ -78,18 +78,69 @@ void setReflectance(unsigned char *data, int const &height, int const &width, in
 	}
 }
 
+void setHighGreen(unsigned char *image, int pos){
+	image[pos + BLUE] = 0;
+	image[pos + GREEN] = 207;
+	image[pos + RED] = 35;
+}
+
+void setMediumGreen(unsigned char *image, int pos){
+	image[pos + BLUE] = 0;
+	image[pos + GREEN] = 236;
+	image[pos + RED] = 39;	
+}
+
+void setLowGreen(unsigned char *image, int pos){
+	image[pos + BLUE] = 74;
+	image[pos + GREEN] = 231;
+	image[pos + RED] = 100;		
+}
+
+void setYellow(unsigned char *image, int pos){
+	image[pos + BLUE] = 106;
+	image[pos + GREEN] = 251;
+	image[pos + RED] = 236;	
+}
+
+void setBlue(unsigned char *image, int pos){
+	image[pos + BLUE] = 252;
+	image[pos + GREEN] = 69;
+	image[pos + RED] = 83;	
+}
+
+void setHighBlue(unsigned char *image, int pos){
+	image[pos + BLUE] = 191;
+	image[pos + GREEN] = 0;
+	image[pos + RED] = 14;		
+}
+
 void normalize(double const &min, double const &max, double *image, int const &height, int const &width, unsigned char *out){
 
 	int posGray, posResult;
+	double value = 0.0;
 	for (int row = 0; row < height; row++){
 		for (int col = 0; col < width; col++){
 			posGray = (row*width)+col;
 			posResult = ((row*width)+col)*3;
+			/*
 			double I = image[posGray];
 			double aux = I - min;
-			out[posResult + BLUE] = (int)round(aux*(255.0/(max-min))*0.114);
-			out[posResult + GREEN] = (int)round((aux*(255.0/(max-min)))*0.587);
-			out[posResult + RED] = (int)round((aux*(255.0/(max-min)))*0.299);
+			double value =  aux*(255.0/(max-min));
+			*/
+			value = image[posGray];
+			if (value > 0.8)
+				setHighGreen(out, posResult);
+			else if (value >= 0.6 && value <= 0.8)
+				setMediumGreen(out, posResult);
+			else if (value >= 0.2 && value < 0.6)
+				setLowGreen(out, posResult);
+			else if (value >= 0 && value < 0.2)
+				setYellow(out, posResult);
+			else if (value > -0.5 && value < 0)
+				setBlue(out, posResult);
+			else if (value <= -1.5)
+				setHighBlue(out, posResult);
+			
 		}
 	}
 }
