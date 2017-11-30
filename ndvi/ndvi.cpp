@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include<opencv2/opencv.hpp>
 #include <math.h>
+#include <time.h>
+#include <fstream>
+#include <sstream>
 
 using namespace std;
 using namespace cv;
@@ -28,6 +31,13 @@ using namespace cv;
 #define BLUE 0
 #define GREEN 1
 #define RED 2
+
+void saveTime(double elapsedTime, string fileName){
+	FILE *stream;
+	stream = fopen("ndvi_time.txt", "a");
+	fprintf(stream, "%f\n", elapsedTime);
+	fclose(stream);
+}
 
 double getRadiance(int grayPixel, int band){
 	if (grayPixel < 5)
@@ -57,7 +67,7 @@ void setRadiance(unsigned char *data, int const &height, int const &width, int c
 			pos = row*width+col;
 			value = getRadiance(data[pos], band);
 			data[pos] = value;
-			
+
 		}
 	}
 }
@@ -71,7 +81,7 @@ void setReflectance(unsigned char *data, int const &height, int const &width, in
 			pos = row*width+col;
 			value = getReflectance((int)data[pos], band);
 			data[pos] = (double)value;
-			
+
 		}
 	}
 }
@@ -85,37 +95,37 @@ void setHighGreen(unsigned char *image, int pos){
 void setMediumGreen(unsigned char *image, int pos){
 	image[pos + BLUE] = 0;
 	image[pos + GREEN] = 236;
-	image[pos + RED] = 39;	
+	image[pos + RED] = 39;
 }
 
 void setLowGreen(unsigned char *image, int pos){
 	image[pos + BLUE] = 74;
 	image[pos + GREEN] = 231;
-	image[pos + RED] = 100;		
+	image[pos + RED] = 100;
 }
 
 void setYellow(unsigned char *image, int pos){
 	image[pos + BLUE] = 106;
 	image[pos + GREEN] = 251;
-	image[pos + RED] = 236;	
+	image[pos + RED] = 236;
 }
 
 void setBlue(unsigned char *image, int pos){
 	image[pos + BLUE] = 252;
 	image[pos + GREEN] = 69;
-	image[pos + RED] = 83;	
+	image[pos + RED] = 83;
 }
 
 void setHighBlue(unsigned char *image, int pos){
 	image[pos + BLUE] = 191;
 	image[pos + GREEN] = 0;
-	image[pos + RED] = 14;		
+	image[pos + RED] = 14;
 }
 
 void setBlack(unsigned char *image, int pos){
 	image[pos + BLUE] = 0;
 	image[pos + GREEN] = 0;
-	image[pos + RED] = 0;			
+	image[pos + RED] = 0;
 }
 
 void normalize(double const &min, double const &max, double *image, int const &height, int const &width, unsigned char *out){
@@ -146,7 +156,7 @@ void normalize(double const &min, double const &max, double *image, int const &h
 				setHighBlue(out, posResult);
 			else if (value == 0)
 				setBlack(out, posResult);
-			
+
 		}
 	}
 }
@@ -158,7 +168,7 @@ void setNDVI(unsigned char *shortWave, unsigned char *redVisible, unsigned char 
 	double value = 0.0;
 	int size = sizeof(double)*width*height;
 	double *temp;
-	temp = (double*)malloc(size);  
+	temp = (double*)malloc(size);
 
 	int i, posResult;
 	for (int row = 0; row < height; row++){
@@ -175,7 +185,7 @@ void setNDVI(unsigned char *shortWave, unsigned char *redVisible, unsigned char 
 				temp[posGray] = (double)redVisible[posGray];
 				//cout << "RED: " <<(double)redVisible[posGray] << endl;
 			}
-			/*	
+			/*
 			if (temp[posGray] > maxValue)
 				maxValue = temp[posGray];
 			if (temp[posGray] < minValue)
@@ -195,6 +205,10 @@ int main(int argc, char **argv)
 		cout << "Missing parameters" << endl;
 		exit(1);
 	}
+
+	clock_t start, end;
+	double time_used;
+	start = clock();
 
 	unsigned char *shortWave;
 	unsigned char *redVisible;
@@ -240,7 +254,7 @@ int main(int argc, char **argv)
 
     int size = sizeof(unsigned char)*width*height*3;
     unsigned char* result;
-    result = (unsigned char*)malloc(size); 
+    result = (unsigned char*)malloc(size);
 
     setNDVI(shortWave, redVisible, result, height, width);
     Mat imageResult;
@@ -248,6 +262,11 @@ int main(int argc, char **argv)
     imageResult.data = result;
 
     imwrite("./NDVIimage.jpg", imageResult);
+
+		end = clock();
+
+		time_used = ((double) (end - start))/CLOCKS_PER_SEC;
+		saveTime(time_used, "ndvi_time.txt");
 
     //Se libera memoria
     free(result);
