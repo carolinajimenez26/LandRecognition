@@ -142,7 +142,7 @@ void normalize(double const &min, double const &max, double *image, int const &h
 				setYellow(out, posResult);
 			else if (value > -0.5 && value < 0)
 				setBlue(out, posResult);
-			else if (value <= -1.5)
+			else if (value <= -0.5)
 				setHighBlue(out, posResult);
 			else if (value == 0)
 				setBlack(out, posResult);
@@ -185,6 +185,7 @@ void setNDVI(unsigned char *shortWave, unsigned char *redVisible, unsigned char 
 	}
 
 	normalize(-1, 1, temp, height, width, result);
+	free(temp);
 
 }
 
