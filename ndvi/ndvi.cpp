@@ -29,21 +29,19 @@ using namespace cv;
 #define GREEN 1
 #define RED 2
 
-int clamp(int const &pixel){
-    if (pixel > 255)
-        return 255;
-    else if (pixel < 0)
-        return 0;
-    else return pixel;
-}
-
 double getRadiance(int grayPixel, int band){
+	if (grayPixel < 5)
+		return 0;
+
 	if (band == 3)
 		return grayPixel * RADIANCE_MULT_BAND_3 + RADIANCE_ADD_BAND_3;
 	return grayPixel * RADIANCE_MULT_BAND_4 + RADIANCE_ADD_BAND_4;
 }
 
 double getReflectance(int pixel, int band){
+	if (pixel < 5)
+		return 0;
+
 	double theta = (theta_SE * M_PI) / 180;
 	if (band == 3)
 		return (REFLECTANCE_MULT_BAND_3 * pixel + REFLECTANCE_ADD_BAND_3) / sin(theta);
@@ -114,6 +112,12 @@ void setHighBlue(unsigned char *image, int pos){
 	image[pos + RED] = 14;		
 }
 
+void setBlack(unsigned char *image, int pos){
+	image[pos + BLUE] = 0;
+	image[pos + GREEN] = 0;
+	image[pos + RED] = 0;			
+}
+
 void normalize(double const &min, double const &max, double *image, int const &height, int const &width, unsigned char *out){
 
 	int posGray, posResult;
@@ -134,12 +138,14 @@ void normalize(double const &min, double const &max, double *image, int const &h
 				setMediumGreen(out, posResult);
 			else if (value >= 0.2 && value < 0.6)
 				setLowGreen(out, posResult);
-			else if (value >= 0 && value < 0.2)
+			else if (value > 0 && value < 0.2)
 				setYellow(out, posResult);
 			else if (value > -0.5 && value < 0)
 				setBlue(out, posResult);
 			else if (value <= -1.5)
 				setHighBlue(out, posResult);
+			else if (value == 0)
+				setBlack(out, posResult);
 			
 		}
 	}
