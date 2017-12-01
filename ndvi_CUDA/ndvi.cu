@@ -61,15 +61,14 @@ double getReflectance(int pixel, int band){
 }
 
 __global__
-void setRadiance(unsigned char *data, int const &height, int const &width, int const &band){
+void setRadiance(unsigned char *data, int height, int width, int band){
   int i = blockIdx.y*blockDim.y+threadIdx.y;
   int j = blockIdx.x*blockDim.x+threadIdx.x;
 
-	double value = 0.0;
-	int pos;
+	double value = 10.0;
+	int pos = i * width + j;
 
   if (i < height and j < width) {
-			pos = i * width + j;
 			value = getRadiance(data[pos], band);
 			data[pos] = value;
 	}
@@ -126,7 +125,7 @@ void setBlack(unsigned char *image, int pos){
 }
 
 __device__
-void normalize(double const &min, double const &max, double *image, int const &height, int const &width, unsigned char *out){
+void normalize(double min, double max, double *image, int height, int width, unsigned char *out){
 
 	int posGray, posResult;
 	double value = 0.0;
@@ -163,22 +162,19 @@ void normalize(double const &min, double const &max, double *image, int const &h
 
 
 __global__
-void setNDVI(unsigned char *shortWave, unsigned char *redVisible, unsigned char *result, int const &height, int const &width){
+void setNDVI(unsigned char *shortWave, unsigned char *redVisible,
+             unsigned char *result, int height, int width, double *temp){
 
-	int posGray;
 	double minValue = -1.0, maxValue = 1.0;
 	double value = 0.0;
-	int size = sizeof(double)*width*height;
-	double *temp;
-	temp = (double*)malloc(size);
 
 	int i = blockIdx.y*blockDim.y+threadIdx.y;
   int j = blockIdx.x*blockDim.x+threadIdx.x;
 
 	int posResult;
+  int posGray = i * width + j;
 
 	if (i < height and j < width) {
-			posGray = i * width + j;
 			double aux1 = getReflectance(shortWave[posGray], 4);
 			double aux2 = getReflectance(redVisible[posGray], 3);
 
@@ -190,17 +186,11 @@ void setNDVI(unsigned char *shortWave, unsigned char *redVisible, unsigned char 
 				temp[posGray] = (double)redVisible[posGray];
 				//cout << "RED: " <<(double)redVisible[posGray] << endl;
 			}
-			/*
-			if (temp[posGray] > maxValue)
-				maxValue = temp[posGray];
-			if (temp[posGray] < minValue)
-				minValue = temp[posGray];
-			*/
+			// temp[posGray] = (double)100;
 		}
 
 	__syncthreads();
 	normalize(-1, 1, temp, height, width, result);
-	free(temp);
 }
 
 int main(int argc, char **argv)
@@ -215,29 +205,30 @@ int main(int argc, char **argv)
 	start = clock();
 
 	cudaError_t error = cudaSuccess;
-	unsigned char *shortWave, *d_shortWave, *redVisible, *d_redVisible, *result, *d_result;
+	unsigned char *shortWave, *d_shortWave, *redVisible, *d_redVisible;
 	char* redVisiblePath = argv[1];
 	char* shortWavePath = argv[2];
 
 	Mat shortWaveMat, redVisibleMat;
 	redVisibleMat = imread(redVisiblePath, 0);
 	shortWaveMat = imread(shortWavePath, 0);
-  Size s = redVisibleMat.size();
+
+  if (!shortWaveMat.data || !redVisibleMat.data){
+  	cout << "error loading image" << endl;
+  	exit(1);
+  }
+  // resize(shortWaveMat, shortWaveMat, Size(shortWaveMat.cols/10, shortWaveMat.rows/10));
+
+	Size s = redVisibleMat.size();
   int width = s.width;
   int height = s.height;
 
-  if (!shortWaveMat.data || !redVisibleMat.data){
-  	cout << "error loading image" << endl;
-  	exit(1);
-  }
+	shortWave = (unsigned char*)malloc(height * width * sizeof(unsigned char));
+	redVisible = (unsigned char*)malloc(height * width * sizeof(unsigned char));
 
-  shortWave = shortWaveMat.data;
-  redVisible = redVisibleMat.data;
 
-  if (!shortWaveMat.data || !redVisibleMat.data){
-  	cout << "error loading image" << endl;
-  	exit(1);
-  }
+	shortWave = shortWaveMat.data;
+	redVisible = redVisibleMat.data;
 
 	error = cudaMalloc((void**)&d_shortWave, width * height * sizeof(unsigned char));
   if (error != cudaSuccess) {
@@ -270,14 +261,16 @@ int main(int argc, char **argv)
   setRadiance<<<dimGrid,dimblock>>>(d_redVisible, height, width, 3);
   cudaDeviceSynchronize();
 
-  setRadiance<<<dimGrid,dimblock>>>(d_shortWave, height, width, 5);
-  cudaDeviceSynchronize();
-
-  error = cudaMemcpy(redVisible, d_redVisible, width * height * sizeof(unsigned char), cudaMemcpyDeviceToHost);
+	error = cudaMemcpy(redVisible, d_redVisible, width * height * sizeof(unsigned char), cudaMemcpyDeviceToHost);
 	if (error != cudaSuccess) {
   	printf("Error copying memory to redVisible");
     return 1;
 	}
+
+
+  setRadiance<<<dimGrid,dimblock>>>(d_shortWave, height, width, 5);
+  cudaDeviceSynchronize();
+
   error = cudaMemcpy(shortWave, d_shortWave, width * height * sizeof(unsigned char), cudaMemcpyDeviceToHost);
 	if (error != cudaSuccess) {
   	printf("Error copying memory to shortWave");
@@ -299,18 +292,30 @@ int main(int argc, char **argv)
 
   int size = sizeof(unsigned char) * width * height * 3;
   unsigned char *result, *d_result;
+  double *d_temp;
+
   result = (unsigned char*)malloc(size);
 
-	error = cudaMalloc((void**)&d_result, sizeof(unsigned char) * width * height * 3);
+	error = cudaMalloc((void**)&d_result, size);
   if (error != cudaSuccess) {
   	printf("Error allocating memory to d_result");
     return 1;
 	}
 
-  setNDVI<<<dimGrid,dimblock>>>(d_shortWave, d_redVisible, d_result, height, width);
+  error = cudaMalloc((void**)&d_temp, sizeof(double) * width * height);
+  if (error != cudaSuccess) {
+  	printf("Error allocating memory to d_temp");
+    return 1;
+	}
+
+  setNDVI<<<dimGrid,dimblock>>>(d_shortWave, d_redVisible, d_result, height, width, d_temp);
 	cudaDeviceSynchronize();
 
-	cudaMemcpy(result, d_result, sizeof(unsigned char) * width * height * 3, cudaMemcpyDeviceToHost);
+	error = cudaMemcpy(result, d_result, size, cudaMemcpyDeviceToHost);
+	if (error != cudaSuccess) {
+  	printf("Error copying memory to result");
+    return 1;
+	}
 
   Mat imageResult;
   imageResult.create(height,width,CV_8UC3);
@@ -324,7 +329,10 @@ int main(int argc, char **argv)
 	saveTime(time_used, "ndvi_time.txt");
 
   //Se libera memoria
-  free(result); cudaFree(d_result);
+  // free(shortWave); free(redVisible);
+  free(result);
+  cudaFree(d_result);
+  cudaFree(d_temp);
 	cudaFree(d_shortWave); cudaFree(d_redVisible);
 
   return 0;

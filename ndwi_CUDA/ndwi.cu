@@ -62,7 +62,7 @@ double getReflectance(int pixel, int band){
 }
 
 __global__
-void setRadiance(unsigned char *data, int const &height, int const &width, int const &band){
+void setRadiance(unsigned char *data, int height, int width, int band){
 
 	double value = 0.0;
 	int pos;
@@ -70,7 +70,7 @@ void setRadiance(unsigned char *data, int const &height, int const &width, int c
   int j = blockIdx.x*blockDim.x+threadIdx.x;
 
 	if (i < height and j < width) {
-			pos = row*width+col;
+			pos = i * width + j;
 			value = getRadiance(data[pos], band);
 			data[pos] = value;
 	}
@@ -154,7 +154,8 @@ void setRed(unsigned char *image, int pos){
 }
 
 __device__
-void normalize(double const &min, double const &max, double *image, int const &height, int const &width, unsigned char *out){
+void normalize(double min, double max, double *image, int height, int width,
+							 unsigned char *out){
 
 	int posGray, posResult;
 	double value = 0.0;
@@ -163,8 +164,8 @@ void normalize(double const &min, double const &max, double *image, int const &h
 	int j = blockIdx.x*blockDim.x+threadIdx.x;
 
 	if (i < height and j < width) {
-			posGray = (row*width)+col;
-			posResult = ((row*width)+col)*3;
+			posGray = i * width + j;
+			posResult = (i * width + j)*3;
 			value = image[posGray];
 
 			if (value > 0.104834912 && value <= 1)
@@ -183,14 +184,12 @@ void normalize(double const &min, double const &max, double *image, int const &h
 }
 
 __global__
-void setNDVI(unsigned char *NIR, unsigned char *shortWave, unsigned char *result, int const &height, int const &width){
+void setNDVI(unsigned char *NIR, unsigned char *shortWave, unsigned char *result,
+						 int height, int width, double *temp){
 
 	int posGray;
 	double minValue = -1.0, maxValue = 1.0;
 	double value = 0.0;
-	int size = sizeof(double)*width*height;
-	double *temp;
-	temp = (double*)malloc(size);
 
 	int i = blockIdx.y*blockDim.y+threadIdx.y;
   int j = blockIdx.x*blockDim.x+threadIdx.x;
@@ -214,8 +213,6 @@ void setNDVI(unsigned char *NIR, unsigned char *shortWave, unsigned char *result
 
 	__syncthreads();
 	normalize(-1, 1, temp, height, width, result);
-	free(temp);
-
 }
 
 int main(int argc, char **argv)
@@ -237,15 +234,18 @@ int main(int argc, char **argv)
 	Mat shortWaveMat, NIRMat;
 	NIRMat = imread(NIRPath, 0);
 	shortWaveMat = imread(shortWavePath, 0);
-  Size s = NIRMat.size();
-  int width = s.width;
-  int height = s.height;
 
   if (!shortWaveMat.data || !NIRMat.data){
   	cout << "error loading image" << endl;
   	exit(1);
   }
 
+	Size s = NIRMat.size();
+	int width = s.width;
+	int height = s.height;
+
+	shortWave = (unsigned char*)malloc(height * width * sizeof(unsigned char));
+	NIR = (unsigned char*)malloc(height * width * sizeof(unsigned char));
 
   shortWave = shortWaveMat.data;
   NIR = NIRMat.data;
@@ -281,14 +281,14 @@ int main(int argc, char **argv)
   setRadiance<<<dimGrid,dimblock>>>(d_NIR, height, width, 4);
   cudaDeviceSynchronize();
 
-	setRadiance<<<dimGrid,dimblock>>>(d_shortWave, height, width, 7);
-  cudaDeviceSynchronize();
-
 	error = cudaMemcpy(NIR, d_NIR, width * height * sizeof(unsigned char), cudaMemcpyDeviceToHost);
 	if (error != cudaSuccess) {
   	printf("Error copying memory to NIR");
     return 1;
 	}
+
+	setRadiance<<<dimGrid,dimblock>>>(d_shortWave, height, width, 7);
+  cudaDeviceSynchronize();
 
 	error = cudaMemcpy(shortWave, d_shortWave, width * height * sizeof(unsigned char), cudaMemcpyDeviceToHost);
 	if (error != cudaSuccess) {
@@ -309,21 +309,32 @@ int main(int argc, char **argv)
 
   //------------------------------------------------
 
-  int size = sizeof(unsigned char)*width*height*3;
+  int size = sizeof(unsigned char) * width * height * 3;
   unsigned char *result, *d_result;
+	double *d_temp;
 
   result = (unsigned char*)malloc(size);
 
-	error = cudaMalloc((void**)&d_result, sizeof(unsigned char) * width * height * 3);
+	error = cudaMalloc((void**)&d_result, size);
   if (error != cudaSuccess) {
   	printf("Error allocating memory to d_result");
     return 1;
 	}
 
-	setNDVI<<<dimGrid,dimblock>>>(NIR, shortWave, result, height, width);
+	error = cudaMalloc((void**)&d_temp, sizeof(double) * width * height);
+  if (error != cudaSuccess) {
+  	printf("Error allocating memory to d_temp");
+    return 1;
+	}
+
+	setNDVI<<<dimGrid,dimblock>>>(d_NIR, d_shortWave, d_result, height, width, d_temp);
 	cudaDeviceSynchronize();
 
-	cudaMemcpy(result, d_result, sizeof(unsigned char) * width * height * 3, cudaMemcpyDeviceToHost);
+	error = cudaMemcpy(result, d_result, size, cudaMemcpyDeviceToHost);
+	if (error != cudaSuccess) {
+  	printf("Error copying memory to result");
+    return 1;
+	}
 
   Mat imageResult;
   imageResult.create(height,width,CV_8UC3);
@@ -337,7 +348,10 @@ int main(int argc, char **argv)
 	saveTime(time_used, "ndvi_time.txt");
 
   //Se libera memoria
-  free(result); cudaFree(d_result);
+	// free(shortWave); free(redVisible);
+	free(result);
+  cudaFree(d_result);
+  cudaFree(d_temp);
 	cudaFree(d_shortWave); cudaFree(d_NIR);
 
 	return 0;
