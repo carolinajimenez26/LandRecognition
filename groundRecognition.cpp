@@ -201,6 +201,7 @@ int main(int argc, char **argv) {
     cerr << "Usage: <images path> <mtl path>" << endl;
     return 1;
   }
+  double SUN_ELEVATION = 53.66309190, EARTH_SUN_DISTANCE = 1.0145756;
   vector<Band> v(7);
   string imagesPath(argv[1]);
   string mtlPath(argv[2]);
