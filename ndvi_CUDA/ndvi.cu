@@ -213,15 +213,15 @@ int main(int argc, char **argv)
 	redVisibleMat = imread(redVisiblePath, 0);
 	shortWaveMat = imread(shortWavePath, 0);
 
-  if (!shortWaveMat.data || !redVisibleMat.data){
-  	cout << "error loading image" << endl;
-  	exit(1);
-  }
-  // resize(shortWaveMat, shortWaveMat, Size(shortWaveMat.cols/10, shortWaveMat.rows/10));
+        if (!shortWaveMat.data || !redVisibleMat.data){
+  	    cout << "error loading image" << endl;
+  	    exit(1);
+        }
+        // resize(shortWaveMat, shortWaveMat, Size(shortWaveMat.cols/10, shortWaveMat.rows/10));
 
 	Size s = redVisibleMat.size();
-  int width = s.width;
-  int height = s.height;
+        int width = s.width;
+        int height = s.height;
 
 	shortWave = (unsigned char*)malloc(height * width * sizeof(unsigned char));
 	redVisible = (unsigned char*)malloc(height * width * sizeof(unsigned char));
@@ -231,27 +231,27 @@ int main(int argc, char **argv)
 	redVisible = redVisibleMat.data;
 
 	error = cudaMalloc((void**)&d_shortWave, width * height * sizeof(unsigned char));
-  if (error != cudaSuccess) {
-  	printf("Error allocating memory to d_shortWave");
-    return 1;
+        if (error != cudaSuccess) {
+  	    printf("Error allocating memory to d_shortWave\n");
+            return 1;
 	}
 
 	error = cudaMalloc((void**)&d_redVisible, width * height * sizeof(unsigned char));
-  if (error != cudaSuccess) {
-  	printf("Error allocating memory to d_redVisible");
-    return 1;
+        if (error != cudaSuccess) {
+  	    printf("Error allocating memory to d_redVisible\n");
+            return 1;
 	}
 
-  error = cudaMemcpy(d_shortWave, shortWave, width * height * sizeof(unsigned char), cudaMemcpyHostToDevice);
+        error = cudaMemcpy(d_shortWave, shortWave, width * height * sizeof(unsigned char), cudaMemcpyHostToDevice);
 	if (error != cudaSuccess) {
-  	printf("Error copying memory to d_shortWave");
-    return 1;
+  	    printf("Error copying memory to d_shortWave\n");
+            return 1;
 	}
 
-  error = cudaMemcpy(d_redVisible, redVisible, width * height * sizeof(unsigned char), cudaMemcpyHostToDevice);
+        error = cudaMemcpy(d_redVisible, redVisible, width * height * sizeof(unsigned char), cudaMemcpyHostToDevice);
 	if (error != cudaSuccess) {
-  	printf("Error copying memory to d_redVisible");
-    return 1;
+  	    printf("Error copying memory to d_redVisible\n");
+            return 1;
 	}
 
   int blockSize = 32;
@@ -263,7 +263,7 @@ int main(int argc, char **argv)
 
 	error = cudaMemcpy(redVisible, d_redVisible, width * height * sizeof(unsigned char), cudaMemcpyDeviceToHost);
 	if (error != cudaSuccess) {
-  	printf("Error copying memory to redVisible");
+  	printf("Error copying memory to redVisible\n");
     return 1;
 	}
 
@@ -273,7 +273,7 @@ int main(int argc, char **argv)
 
   error = cudaMemcpy(shortWave, d_shortWave, width * height * sizeof(unsigned char), cudaMemcpyDeviceToHost);
 	if (error != cudaSuccess) {
-  	printf("Error copying memory to shortWave");
+  	printf("Error copying memory to shortWave\n");
     return 1;
 	}
 
@@ -298,13 +298,13 @@ int main(int argc, char **argv)
 
 	error = cudaMalloc((void**)&d_result, size);
   if (error != cudaSuccess) {
-  	printf("Error allocating memory to d_result");
+  	printf("Error allocating memory to d_result\n");
     return 1;
 	}
 
   error = cudaMalloc((void**)&d_temp, sizeof(double) * width * height);
   if (error != cudaSuccess) {
-  	printf("Error allocating memory to d_temp");
+  	printf("Error allocating memory to d_temp\n");
     return 1;
 	}
 
@@ -313,7 +313,7 @@ int main(int argc, char **argv)
 
 	error = cudaMemcpy(result, d_result, size, cudaMemcpyDeviceToHost);
 	if (error != cudaSuccess) {
-  	printf("Error copying memory to result");
+  	printf("Error copying memory to result\n");
     return 1;
 	}
 
