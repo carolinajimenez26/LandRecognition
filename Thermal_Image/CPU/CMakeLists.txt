@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 2.8)
+project(Thermal)
+find_package(OpenCV REQUIRED)
+include_directories(${OpenCV_INCLUDE_DIRS})
+add_executable(Thermal_Image.out Thermal_Image.cpp )
+target_link_libraries(Thermal_Image.out ${OpenCV_LIBS})
